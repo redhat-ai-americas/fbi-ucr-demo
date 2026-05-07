@@ -5,9 +5,11 @@ A repeatable OpenShift demo that stands up:
 1. **gpt-oss-20b** — vLLM-served LLM with tool-calling support (GPU)
 2. **FBI UCR predictive service** — Prophet/ARIMA models for 5 offenses × national + 5 states
 3. **FBI Crime Stats MCP server** — exposes `ucr_forecast`, `ucr_history`, `ucr_compare`, `ucr_info` tools
-4. **Crime analyst chatbot** — built with [`fips-agents`](https://github.com/fips-agents/fips-agents-cli), wired to the MCP server and the LLM
+4. **Crime analyst agent** — `fipsagents` BaseAgent wired to the MCP server and the LLM
+5. **Gateway** — fips-agents API gateway in front of the agent (anonymous auth, /v1/* proxy)
+6. **Chat UI** — fips-agents web UI talking to the gateway
 
-End-to-end runtime: ~25–35 minutes from logged-in cluster to working chat UI.
+End-to-end runtime: ~30–40 minutes from logged-in cluster to working chat UI.
 
 ---
 
@@ -86,7 +88,9 @@ That's it. The script:
 | gpt-oss-20b (vLLM) | `gpt-oss-model` | `registry.redhat.io/rhaiis/vllm-cuda-rhel9:3` serving `RedHatAI/gpt-oss-20b` |
 | Predictive service | `fbi-ucr` | `quay.io/wjackson/crime-stats-api:latest` |
 | MCP server | `fbi-mcp` | BuildConfig from [`fbi-crime-stats-mcp`](https://github.com/rdwj/fbi-crime-stats-mcp) |
-| Chatbot agent | `fbi-agent` | Cloned from [`fbi-crime-analyst-agent`](https://github.com/redhat-ai-americas/fbi-crime-analyst-agent) |
+| Agent | `fbi-agent` | BuildConfig from [`fbi-crime-analyst-agent`](https://github.com/redhat-ai-americas/fbi-crime-analyst-agent) |
+| Gateway | `fbi-gateway` | BuildConfig from [`fbi-crime-analyst-gateway`](https://github.com/redhat-ai-americas/fbi-crime-analyst-gateway) |
+| UI | `fbi-ui` | BuildConfig from [`fbi-crime-analyst-ui`](https://github.com/redhat-ai-americas/fbi-crime-analyst-ui) |
 
 Source repos are pinned in `ansible/group_vars/all.yml` — change them in one place when the upstream repos move.
 
@@ -98,8 +102,8 @@ Source repos are pinned in `ansible/group_vars/all.yml` — change them in one p
 .
 ├── setup.sh                  # one-shot entry point
 ├── scripts/
-│   ├── generate_inventory.sh # turn `oc whoami` into ansible inventory
-│   └── deploy-agent.sh       # clones+deploys the agent
+│   ├── generate_inventory.sh    # turn `oc whoami` into ansible inventory
+│   └── deploy-fips-component.sh # generic agent/gateway/UI deploy via on-cluster BuildConfig + helm
 ├── ansible/
 │   ├── site.yml              # cluster bring-up (NFD + GPU + RHOAI)
 │   ├── fbi-deploy.yml        # FBI workloads

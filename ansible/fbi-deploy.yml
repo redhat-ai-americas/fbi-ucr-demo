@@ -184,22 +184,52 @@
       retries: 20
       delay: 10
 
-    # ─── Phase 4: Agent ───────────────────────────────────────────────────
-    # The agent has its own Helm chart from the fips-agents template.
-    # We delegate to a shell task that clones (or uses local path) and runs
-    # `make deploy PROJECT={{ agent_namespace }}`.
-    - name: Deploy chatbot agent (delegated to scripts/deploy-agent.sh)
+    # ─── Phase 4: fips-agents components ──────────────────────────────────
+    # All three components (agent, gateway, UI) build via on-cluster
+    # BuildConfig from their respective GitHub repos and deploy via Helm
+    # against the cluster's internal registry. Wired in dependency order:
+    # the gateway points at the agent service; the UI points at the gateway.
+    - name: Deploy chatbot agent
       ansible.builtin.command:
         cmd: >-
-          {{ manifest_base_dir }}/scripts/deploy-agent.sh
+          {{ manifest_base_dir }}/scripts/deploy-fips-component.sh
+          --name fbi-crime-analyst-agent
           --namespace {{ agent_namespace }}
-          --mcp-url http://fbi-crime-stats-mcp.{{ mcp_namespace }}.svc.cluster.local:8080/mcp/
-          --llm-url http://gpt-oss-20b.{{ llm_namespace }}.svc.cluster.local:80/v1
-          --llm-model {{ llm_model_id }}
+          --repo {{ agent_repo_url }}
+          --ref  {{ agent_repo_ref }}
+          --config MCP_FBI_URL=http://fbi-crime-stats-mcp.{{ mcp_namespace }}.svc.cluster.local:8080/mcp/
+          --config MODEL_ENDPOINT=http://gpt-oss-20b.{{ llm_namespace }}.svc.cluster.local:80/v1
+          --config MODEL_NAME={{ llm_model_id }}
       environment:
-        AGENT_REPO_URL: "{{ agent_repo_url }}"
-        AGENT_REPO_REF: "{{ agent_repo_ref }}"
+        OC_CONTEXT: "{{ oc_context | default('') }}"
         AGENT_LOCAL_PATH: "{{ agent_local_path }}"
+        KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
+      delegate_to: localhost
+
+    - name: Deploy gateway
+      ansible.builtin.command:
+        cmd: >-
+          {{ manifest_base_dir }}/scripts/deploy-fips-component.sh
+          --name fbi-crime-analyst-gateway
+          --namespace {{ gateway_namespace }}
+          --repo {{ gateway_repo_url }}
+          --ref  {{ gateway_repo_ref }}
+          --config BACKEND_URL=http://fbi-crime-analyst-agent.{{ agent_namespace }}.svc.cluster.local:8080
+      environment:
+        OC_CONTEXT: "{{ oc_context | default('') }}"
+        KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
+      delegate_to: localhost
+
+    - name: Deploy UI
+      ansible.builtin.command:
+        cmd: >-
+          {{ manifest_base_dir }}/scripts/deploy-fips-component.sh
+          --name fbi-crime-analyst-ui
+          --namespace {{ ui_namespace }}
+          --repo {{ ui_repo_url }}
+          --ref  {{ ui_repo_ref }}
+          --config API_URL=http://fbi-crime-analyst-gateway.{{ gateway_namespace }}.svc.cluster.local:8080
+      environment:
         OC_CONTEXT: "{{ oc_context | default('') }}"
         KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
       delegate_to: localhost
@@ -208,9 +238,11 @@
       ansible.builtin.shell: |
         set -e
         echo "=== FBI UCR demo deployed ==="
-        echo "Predictive service:  https://$(oc get route fbi-ucr -n {{ predictive_namespace }} -o jsonpath='{.spec.host}')"
+        echo "UI:                  https://$(oc get route -n {{ ui_namespace }} -l app.kubernetes.io/name=fbi-crime-analyst-ui -o jsonpath='{.items[0].spec.host}')"
+        echo "Gateway:             https://$(oc get route -n {{ gateway_namespace }} -l app.kubernetes.io/name=fbi-crime-analyst-gateway -o jsonpath='{.items[0].spec.host}')"
+        echo "Agent:               https://$(oc get route -n {{ agent_namespace }} -l app.kubernetes.io/name=fbi-crime-analyst-agent -o jsonpath='{.items[0].spec.host}')"
         echo "MCP server:          https://$(oc get route fbi-crime-stats-mcp -n {{ mcp_namespace }} -o jsonpath='{.spec.host}')/mcp/"
+        echo "Predictive service:  https://$(oc get route fbi-ucr -n {{ predictive_namespace }} -o jsonpath='{.spec.host}')"
         echo "LLM (gpt-oss-20b):   https://$(oc get route gpt-oss-20b -n {{ llm_namespace }} -o jsonpath='{.spec.host}')/v1"
-        echo "Agent:               https://$(oc get route -n {{ agent_namespace }} -l app.kubernetes.io/name=fbi-crime-analyst -o jsonpath='{.items[0].spec.host}' 2>/dev/null || echo '<not yet exposed>')"
       delegate_to: localhost
       changed_when: false

@@ -75,6 +75,8 @@ manifest_base_dir: "{{ playbook_dir }}/.."
 predictive_namespace: "fbi-ucr"
 mcp_namespace: "fbi-mcp"
 agent_namespace: "fbi-agent"
+gateway_namespace: "fbi-gateway"
+ui_namespace: "fbi-ui"
 llm_namespace: "gpt-oss-model"
 
 # Source repos. These are pinned upstream URLs the demo pulls from. When the
@@ -86,6 +88,10 @@ mcp_repo_url: "https://github.com/rdwj/fbi-crime-stats-mcp.git"
 mcp_repo_ref: "feat/env-driven-prediction-url"
 agent_repo_url: "https://github.com/redhat-ai-americas/fbi-crime-analyst-agent.git"
 agent_repo_ref: "main"
+gateway_repo_url: "https://github.com/redhat-ai-americas/fbi-crime-analyst-gateway.git"
+gateway_repo_ref: "main"
+ui_repo_url: "https://github.com/redhat-ai-americas/fbi-crime-analyst-ui.git"
+ui_repo_ref: "main"
 
 # Local fallback: when the agent repo is not yet pushed to GitHub, point
 # this at a sibling directory and the deploy play will use it instead of cloning.
