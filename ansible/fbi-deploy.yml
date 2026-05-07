@@ -1,0 +1,216 @@
+---
+# Deploys the FBI UCR demo workloads onto a cluster that already has
+# OpenShift AI installed (run site.yml first).
+#
+# Phases:
+#   1. gpt-oss-20b LLM (vLLM, GPU)
+#   2. Predictive service (CPU, pre-built image)
+#   3. MCP server (BuildConfig from upstream Git repo)
+#   4. Agent (cloned from agent_repo_url, deployed via its own make/helm)
+#
+# All resources are namespaced. The cluster context comes from inventory.
+
+- name: Deploy FBI UCR demo workloads
+  hosts: all
+  gather_facts: false
+  module_defaults:
+    group/kubernetes.core.k8s:
+      host: "{{ k8s_host }}"
+      api_key: "{{ k8s_api_key }}"
+      validate_certs: "{{ validate_certs }}"
+  vars:
+    manifest_base_dir: "{{ playbook_dir }}/.."
+
+  tasks:
+    # ─── Phase 1: LLM ─────────────────────────────────────────────────────
+    - name: Apply gpt-oss-20b model serving manifest
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ manifest_base_dir }}/model/gpt-oss-20b.yaml"
+
+    - name: Wait for gpt-oss-20b deployment to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: gpt-oss-20b
+        namespace: "{{ llm_namespace }}"
+      register: gpt_oss_status
+      until:
+        - gpt_oss_status.resources | length > 0
+        - gpt_oss_status.resources[0].status.availableReplicas | default(0) >= 1
+      retries: 60
+      delay: 30
+
+    # ─── Phase 2: Predictive service ──────────────────────────────────────
+    - name: Apply predictive service manifests
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - "{{ manifest_base_dir }}/manifests/predictive-service/namespace.yaml"
+        - "{{ manifest_base_dir }}/manifests/predictive-service/deployment.yaml"
+        - "{{ manifest_base_dir }}/manifests/predictive-service/service.yaml"
+        - "{{ manifest_base_dir }}/manifests/predictive-service/route.yaml"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Wait for predictive service deployment to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: fbi-ucr
+        namespace: "{{ predictive_namespace }}"
+      register: pred_status
+      until:
+        - pred_status.resources | length > 0
+        - pred_status.resources[0].status.availableReplicas | default(0) >= 1
+      retries: 30
+      delay: 10
+
+    # ─── Phase 3: MCP server ──────────────────────────────────────────────
+    - name: Apply MCP server namespace
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ manifest_base_dir }}/manifests/mcp-server/namespace.yaml"
+
+    - name: Apply MCP server ImageStream
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: image.openshift.io/v1
+          kind: ImageStream
+          metadata:
+            name: fbi-crime-stats-mcp
+            namespace: "{{ mcp_namespace }}"
+            labels:
+              app.kubernetes.io/name: fbi-crime-stats-mcp
+              app.kubernetes.io/part-of: fbi-ucr-demo
+
+    - name: Apply MCP server BuildConfig
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: build.openshift.io/v1
+          kind: BuildConfig
+          metadata:
+            name: fbi-crime-stats-mcp
+            namespace: "{{ mcp_namespace }}"
+            labels:
+              app.kubernetes.io/name: fbi-crime-stats-mcp
+              app.kubernetes.io/part-of: fbi-ucr-demo
+          spec:
+            output:
+              to:
+                kind: ImageStreamTag
+                name: fbi-crime-stats-mcp:latest
+            source:
+              type: Git
+              git:
+                uri: "{{ mcp_repo_url }}"
+                ref: "{{ mcp_repo_ref }}"
+            strategy:
+              type: Docker
+              dockerStrategy:
+                dockerfilePath: Containerfile
+            triggers:
+              - type: ConfigChange
+
+    - name: Apply MCP server ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: fbi-crime-stats-mcp-config
+            namespace: "{{ mcp_namespace }}"
+            labels:
+              app.kubernetes.io/name: fbi-crime-stats-mcp
+              app.kubernetes.io/part-of: fbi-ucr-demo
+          data:
+            PREDICTION_API_URL: "http://fbi-ucr.{{ predictive_namespace }}.svc.cluster.local:8080"
+            MCP_TRANSPORT: "http"
+            MCP_HTTP_HOST: "0.0.0.0"
+            MCP_HTTP_PORT: "8080"
+            MCP_HTTP_PATH: "/mcp/"
+            MCP_LOG_LEVEL: "INFO"
+
+    - name: Apply MCP server Secret (FBI_API_KEY)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: fbi-crime-stats-mcp-secrets
+            namespace: "{{ mcp_namespace }}"
+            labels:
+              app.kubernetes.io/name: fbi-crime-stats-mcp
+              app.kubernetes.io/part-of: fbi-ucr-demo
+          type: Opaque
+          stringData:
+            FBI_API_KEY: "{{ fbi_api_key }}"
+
+    - name: Build MCP server image (oc start-build --wait)
+      ansible.builtin.command:
+        cmd: >-
+          oc {{ ('--context=' ~ oc_context) if oc_context else '' }}
+          -n {{ mcp_namespace }}
+          start-build fbi-crime-stats-mcp --wait --follow=false
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Apply MCP server Deployment + Service + Route
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item }}"
+      loop:
+        - "{{ manifest_base_dir }}/manifests/mcp-server/deployment.yaml"
+        - "{{ manifest_base_dir }}/manifests/mcp-server/service.yaml"
+        - "{{ manifest_base_dir }}/manifests/mcp-server/route.yaml"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Wait for MCP server deployment to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: fbi-crime-stats-mcp
+        namespace: "{{ mcp_namespace }}"
+      register: mcp_status
+      until:
+        - mcp_status.resources | length > 0
+        - mcp_status.resources[0].status.availableReplicas | default(0) >= 1
+      retries: 20
+      delay: 10
+
+    # ─── Phase 4: Agent ───────────────────────────────────────────────────
+    # The agent has its own Helm chart from the fips-agents template.
+    # We delegate to a shell task that clones (or uses local path) and runs
+    # `make deploy PROJECT={{ agent_namespace }}`.
+    - name: Deploy chatbot agent (delegated to scripts/deploy-agent.sh)
+      ansible.builtin.command:
+        cmd: >-
+          {{ manifest_base_dir }}/scripts/deploy-agent.sh
+          --namespace {{ agent_namespace }}
+          --mcp-url http://fbi-crime-stats-mcp.{{ mcp_namespace }}.svc.cluster.local:8080/mcp/
+          --llm-url http://gpt-oss-20b.{{ llm_namespace }}.svc.cluster.local:80/v1
+          --llm-model {{ llm_model_id }}
+      environment:
+        AGENT_REPO_URL: "{{ agent_repo_url }}"
+        AGENT_REPO_REF: "{{ agent_repo_ref }}"
+        AGENT_LOCAL_PATH: "{{ agent_local_path }}"
+        OC_CONTEXT: "{{ oc_context | default('') }}"
+        KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') }}"
+      delegate_to: localhost
+
+    - name: Print demo URLs
+      ansible.builtin.shell: |
+        set -e
+        echo "=== FBI UCR demo deployed ==="
+        echo "Predictive service:  https://$(oc get route fbi-ucr -n {{ predictive_namespace }} -o jsonpath='{.spec.host}')"
+        echo "MCP server:          https://$(oc get route fbi-crime-stats-mcp -n {{ mcp_namespace }} -o jsonpath='{.spec.host}')/mcp/"
+        echo "LLM (gpt-oss-20b):   https://$(oc get route gpt-oss-20b -n {{ llm_namespace }} -o jsonpath='{.spec.host}')/v1"
+        echo "Agent:               https://$(oc get route -n {{ agent_namespace }} -l app.kubernetes.io/name=fbi-crime-analyst -o jsonpath='{.items[0].spec.host}' 2>/dev/null || echo '<not yet exposed>')"
+      delegate_to: localhost
+      changed_when: false

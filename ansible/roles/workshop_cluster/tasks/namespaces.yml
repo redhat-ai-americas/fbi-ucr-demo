@@ -1,0 +1,4 @@
+- name: Apply namespace manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ manifest_base_dir }}/namespaces/namespaces.yaml"

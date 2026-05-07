@@ -1,0 +1,33 @@
+- name: Phase 1 — Create GPU MachineSet
+  ansible.builtin.include_tasks: gpu_machineset.yml
+  when: enable_gpu | bool
+
+- name: Phase 2 — Apply auth manifests
+  ansible.builtin.include_tasks: auth.yml
+  when: enable_htpasswd | bool
+
+- name: Phase 3 — Create namespaces
+  ansible.builtin.include_tasks: namespaces.yml
+
+- name: Phase 4 — Install operators
+  ansible.builtin.include_tasks: operators.yml
+
+- name: Phase 5 — Approve install plans
+  ansible.builtin.include_tasks: installplans.yml
+
+- name: Phase 6 — Wait for operator CSVs
+  ansible.builtin.include_tasks: csv_wait.yml
+
+- name: Phase 7 — Deploy operands
+  ansible.builtin.include_tasks: operands.yml
+
+- name: Phase 8 — Wait for operand readiness
+  ansible.builtin.include_tasks: operand_wait.yml
+
+- name: Phase 9 — Deploy GPU operand
+  ansible.builtin.include_tasks: gpu_operand.yml
+  when: enable_gpu | bool
+
+- name: Phase 10 — Wait for GPU readiness
+  ansible.builtin.include_tasks: gpu_wait.yml
+  when: enable_gpu | bool

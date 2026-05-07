@@ -1,0 +1,17 @@
+# Copy this file to clusters.yml and populate with RHPDS cluster credentials.
+# clusters.yml is gitignored — do not commit real credentials.
+#
+# To get a token: oc login <api_url> -u <user> -p <password> && oc whoami -t
+# Or use the service account token from the RHPDS provisioning output.
+#
+all:
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  hosts:
+    # cluster-01:
+    #   k8s_host: "https://api.cluster-abc12.sandbox123.opentlc.com:6443"
+    #   k8s_api_key: "sha256~xxxxx..."
+    # cluster-02:
+    #   k8s_host: "https://api.cluster-def34.sandbox456.opentlc.com:6443"
+    #   k8s_api_key: "sha256~yyyyy..."

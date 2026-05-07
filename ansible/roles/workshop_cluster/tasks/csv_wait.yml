@@ -1,0 +1,37 @@
+- name: Wait for NFD operator CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: openshift-nfd
+  register: nfd_csv
+  until:
+    - nfd_csv.resources | default([]) | selectattr('metadata.name', 'match', nfd_csv_prefix) | selectattr('status.phase', 'equalto', 'Succeeded') | list | length > 0
+  retries: "{{ csv_retries | int }}"
+  delay: "{{ csv_delay | int }}"
+
+- name: Wait for GPU operator CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    name: "{{ gpu_csv_name }}"
+    namespace: nvidia-gpu-operator
+  register: gpu_csv
+  until:
+    - gpu_csv.resources | default([]) | length > 0
+    - (gpu_csv.resources | default([{}]))[0].status.phase | default('') == 'Succeeded'
+  retries: "{{ csv_retries | int }}"
+  delay: "{{ csv_delay | int }}"
+  when: enable_gpu | bool
+
+- name: Wait for RHOAI operator CSV to succeed
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    name: "{{ rhoai_csv_name }}"
+    namespace: redhat-ods-operator
+  register: rhoai_csv
+  until:
+    - rhoai_csv.resources | default([]) | length > 0
+    - (rhoai_csv.resources | default([{}]))[0].status.phase | default('') == 'Succeeded'
+  retries: "{{ csv_retries | int }}"
+  delay: "{{ csv_delay | int }}"

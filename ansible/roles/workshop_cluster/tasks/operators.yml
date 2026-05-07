@@ -1,0 +1,33 @@
+- name: Apply GPU operator manifest
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ manifest_base_dir }}/operators/gpu-operator.yaml"
+  when: enable_gpu | bool
+
+- name: Apply non-GPU operator manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+  loop: >-
+    {{ lookup('fileglob', manifest_base_dir + '/operators/*.yaml', wantlist=true)
+       | reject('search', 'gpu-operator')
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Apply RHOAI operator subscription
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: rhods-operator
+        namespace: redhat-ods-operator
+      spec:
+        channel: "{{ rhoai_channel }}"
+        installPlanApproval: Manual
+        startingCSV: "{{ rhoai_starting_csv }}"
+        name: rhods-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace

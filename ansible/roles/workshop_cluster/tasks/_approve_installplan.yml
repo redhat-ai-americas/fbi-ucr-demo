@@ -1,0 +1,54 @@
+- name: "Check if operator already installed in {{ ns }}"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: Subscription
+    namespace: "{{ ns }}"
+  register: sub_precheck
+
+- name: "Set CSV already succeeded flag for {{ ns }}"
+  ansible.builtin.set_fact:
+    csv_already_succeeded: >-
+      {{ sub_precheck.resources
+         | selectattr('status', 'defined')
+         | selectattr('status.installedCSV', 'defined')
+         | list | length > 0 }}
+
+- name: "Wait for InstallPlan in {{ ns }}"
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: InstallPlan
+    namespace: "{{ ns }}"
+  register: installplan_result
+  until:
+    - installplan_result.resources | selectattr('spec.approved', 'equalto', false) | list | length > 0
+  retries: "{{ installplan_retries | int }}"
+  delay: "{{ installplan_delay | int }}"
+  when: not csv_already_succeeded | bool
+
+- name: "Identify unapproved InstallPlan in {{ ns }}"
+  ansible.builtin.set_fact:
+    unapproved_plan: >-
+      {{
+        installplan_result.resources
+        | selectattr('spec.approved', 'equalto', false)
+        | map(attribute='metadata.name')
+        | first
+      }}
+  when: not csv_already_succeeded | bool
+
+- name: "Approve InstallPlan {{ unapproved_plan | default('N/A') }} in {{ ns }}"
+  kubernetes.core.k8s:
+    api_version: operators.coreos.com/v1alpha1
+    kind: InstallPlan
+    name: "{{ unapproved_plan }}"
+    namespace: "{{ ns }}"
+    definition:
+      spec:
+        approved: true
+    merge_type: merge
+  when: not csv_already_succeeded | bool
+
+- name: "Operator in {{ ns }} already installed, skipping install plan approval"
+  ansible.builtin.debug:
+    msg: "CSV already Succeeded in {{ ns }}, no install plan approval needed"
+  when: csv_already_succeeded | bool

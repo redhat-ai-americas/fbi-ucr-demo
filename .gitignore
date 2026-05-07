@@ -1,0 +1,20 @@
+# Cluster inventory contains long-lived service-account tokens — never commit.
+ansible/inventory/clusters.yml
+ansible/inventory/*.retry
+*.retry
+
+# Ansible runtime
+.ansible/
+*.pyc
+__pycache__/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local-only scratch
+scratch/
+NEXT_SESSION.md
+NOTES.md
+TODO_NEXT.md

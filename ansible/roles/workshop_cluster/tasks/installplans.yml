@@ -1,0 +1,5 @@
+- name: Wait for and approve InstallPlan in each operator namespace
+  ansible.builtin.include_tasks: _approve_installplan.yml
+  loop: "{{ operator_namespaces }}"
+  loop_control:
+    loop_var: ns

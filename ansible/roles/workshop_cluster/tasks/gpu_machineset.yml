@@ -1,0 +1,102 @@
+- name: Fetch existing worker MachineSets
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: openshift-machine-api
+  register: machinesets_result
+
+- name: Verify at least one MachineSet exists
+  ansible.builtin.assert:
+    that:
+      - machinesets_result.resources | length > 0
+    fail_msg: "No MachineSets found in openshift-machine-api. Is this an AWS cluster?"
+
+- name: Select the first worker MachineSet
+  ansible.builtin.set_fact:
+    source_machineset: "{{ machinesets_result.resources | first }}"
+
+- name: Build GPU MachineSet name
+  ansible.builtin.set_fact:
+    gpu_machineset_name: "{{ gpu_machineset_prefix }}{{ source_machineset.metadata.name }}"
+
+- name: Construct GPU MachineSet definition
+  ansible.builtin.set_fact:
+    gpu_machineset: >-
+      {{
+        {
+          'apiVersion': source_machineset.apiVersion,
+          'kind': source_machineset.kind,
+          'metadata': {
+            'name': gpu_machineset_name,
+            'namespace': source_machineset.metadata.namespace,
+            'labels': source_machineset.metadata.labels | default({}),
+            'annotations': source_machineset.metadata.annotations | default({})
+          },
+          'spec': source_machineset.spec | combine({
+            'replicas': gpu_replicas,
+            'selector': {
+              'matchLabels': source_machineset.spec.selector.matchLabels | combine({
+                'machine.openshift.io/cluster-api-machineset': gpu_machineset_name
+              })
+            },
+            'template': {
+              'metadata': {
+                'labels': source_machineset.spec.template.metadata.labels | combine({
+                  'machine.openshift.io/cluster-api-machineset': gpu_machineset_name
+                })
+              },
+              'spec': source_machineset.spec.template.spec | combine({
+                'providerSpec': {
+                  'value': source_machineset.spec.template.spec.providerSpec.value | combine({
+                    'instanceType': gpu_instance_type,
+                    'blockDevices': [{
+                      'ebs': source_machineset.spec.template.spec.providerSpec.value.blockDevices[0].ebs | combine({
+                        'volumeSize': gpu_disk_size_gb
+                      })
+                    }]
+                  }, recursive=true)
+                },
+                'taints': [{
+                  'key': gpu_taint_key,
+                  'value': '',
+                  'effect': gpu_taint_effect
+                }]
+              }, recursive=true)
+            }
+          }, recursive=true)
+        }
+      }}
+
+- name: Apply GPU MachineSet
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ gpu_machineset }}"
+    server_side_apply:
+      field_manager: ansible
+      force_conflicts: true
+
+- name: Verify GPU MachineSet instance type
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: "{{ gpu_machineset_name }}"
+    namespace: openshift-machine-api
+  register: ms_check
+  until:
+    - ms_check.resources | length > 0
+    - ms_check.resources[0].spec.template.spec.providerSpec.value.instanceType == gpu_instance_type
+  retries: "{{ machineset_retries | int }}"
+  delay: "{{ machineset_delay | int }}"
+
+- name: Verify GPU MachineSet replicas
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: "{{ gpu_machineset_name }}"
+    namespace: openshift-machine-api
+  register: ms_replicas_check
+  until:
+    - ms_replicas_check.resources | length > 0
+    - ms_replicas_check.resources[0].spec.replicas == gpu_replicas
+  retries: "{{ machineset_retries | int }}"
+  delay: "{{ machineset_delay | int }}"

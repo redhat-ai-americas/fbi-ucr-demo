@@ -1,0 +1,21 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: fbi-crime-stats-mcp
+  namespace: fbi-mcp
+  labels:
+    app.kubernetes.io/name: fbi-crime-stats-mcp
+    app.kubernetes.io/part-of: fbi-ucr-demo
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: fbi-crime-stats-mcp
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

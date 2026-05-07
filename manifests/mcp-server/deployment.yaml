@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fbi-crime-stats-mcp
+  namespace: fbi-mcp
+  labels:
+    app.kubernetes.io/name: fbi-crime-stats-mcp
+    app.kubernetes.io/part-of: fbi-ucr-demo
+  annotations:
+    image.openshift.io/triggers: |
+      [{
+        "from": {"kind": "ImageStreamTag", "name": "fbi-crime-stats-mcp:latest"},
+        "fieldPath": "spec.template.spec.containers[?(@.name==\"mcp-server\")].image"
+      }]
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fbi-crime-stats-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fbi-crime-stats-mcp
+        app.kubernetes.io/part-of: fbi-ucr-demo
+    spec:
+      containers:
+        - name: mcp-server
+          image: fbi-crime-stats-mcp:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: fbi-crime-stats-mcp-config
+            - secretRef:
+                name: fbi-crime-stats-mcp-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

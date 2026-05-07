@@ -1,0 +1,27 @@
+# Apply user-provided HTPasswd / OAuth manifests when enable_htpasswd=true.
+#
+# This demo defaults to kubeadmin (enable_htpasswd: false). To use a non-
+# kubeadmin identity, drop your own manifests into the repo's auth/ directory
+# (htpasswd-secret.yaml, htpasswd_oauth.yaml, admin_permissions.yaml) and
+# re-run with -e enable_htpasswd=true. The workshop-setup repo has reference
+# manifests if you want a starting point.
+- name: Discover auth manifests
+  ansible.builtin.set_fact:
+    auth_manifests: "{{ lookup('fileglob', manifest_base_dir + '/auth/*.yaml', wantlist=true) }}"
+
+- name: Fail clearly when enable_htpasswd=true but no auth manifests provided
+  ansible.builtin.assert:
+    that:
+      - auth_manifests | length > 0
+    fail_msg: >-
+      enable_htpasswd=true but no manifests found under {{ manifest_base_dir }}/auth/.
+      Provide htpasswd-secret.yaml + htpasswd_oauth.yaml + admin_permissions.yaml,
+      or re-run without -e enable_htpasswd=true.
+
+- name: Apply auth manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+  loop: "{{ auth_manifests }}"
+  loop_control:
+    label: "{{ item | basename }}"

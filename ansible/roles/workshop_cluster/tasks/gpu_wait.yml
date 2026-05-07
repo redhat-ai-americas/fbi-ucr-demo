@@ -1,0 +1,29 @@
+- name: Wait for ClusterPolicy to be ready
+  kubernetes.core.k8s_info:
+    api_version: nvidia.com/v1
+    kind: ClusterPolicy
+    name: gpu-cluster-policy
+  register: cp_check
+  until:
+    - cp_check.resources | length > 0
+    - cp_check.resources[0].status.state | default('') == 'ready'
+  retries: "{{ clusterpolicy_retries | int }}"
+  delay: "{{ clusterpolicy_delay | int }}"
+
+- name: Wait for GPU node with nvidia.com/gpu capacity
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: gpu_node_check
+  until:
+    - >-
+      gpu_node_check.resources
+      | selectattr('status.capacity', 'defined')
+      | map(attribute='status.capacity')
+      | map('dict2items')
+      | flatten
+      | selectattr('key', 'equalto', 'nvidia.com/gpu')
+      | selectattr('value', 'ne', '0')
+      | list | length > 0
+  retries: "{{ gpu_node_retries | int }}"
+  delay: "{{ gpu_node_delay | int }}"

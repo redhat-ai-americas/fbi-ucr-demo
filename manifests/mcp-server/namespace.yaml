@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fbi-mcp
+  labels:
+    app.kubernetes.io/name: fbi-crime-stats-mcp
+    app.kubernetes.io/part-of: fbi-ucr-demo

@@ -1,0 +1,4 @@
+- name: Apply GPU ClusterPolicy
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ manifest_base_dir }}/gpu-operand/cluster-policy.yaml"

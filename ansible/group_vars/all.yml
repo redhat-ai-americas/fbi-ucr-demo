@@ -1,0 +1,107 @@
+validate_certs: false
+
+# RHOAI version selection — set this to choose which version to deploy.
+# Override at deploy time with: -e rhoai_version=3.2
+rhoai_version: "3.3"
+
+# GPU toggle — set to false for clusters without GPU nodes.
+# Override at deploy time with: -e enable_gpu=false
+enable_gpu: true
+
+# HTPasswd auth toggle — single-driver demos can use kubeadmin.
+# Override at deploy time with: -e enable_htpasswd=true (workshop / multi-user mode).
+enable_htpasswd: false
+
+# RHOAI version matrix — add new versions here.
+rhoai_versions:
+  "3.2":
+    csv_name: "rhods-operator.3.2.0"
+    channel: "fast-3.x"
+    starting_csv: "rhods-operator.3.2.0"
+  "3.3":
+    csv_name: "rhods-operator.3.3.1"
+    channel: "fast-3.x"
+    starting_csv: "rhods-operator.3.3.1"
+
+# Derived RHOAI variables — do not set these directly.
+rhoai_csv_name: "{{ rhoai_versions[rhoai_version].csv_name }}"
+rhoai_channel: "{{ rhoai_versions[rhoai_version].channel }}"
+rhoai_starting_csv: "{{ rhoai_versions[rhoai_version].starting_csv }}"
+
+# GPU machineset parameters — change these per workshop class.
+gpu_instance_type: "g6e.4xlarge"
+gpu_disk_size_gb: 200
+gpu_replicas: 1
+gpu_taint_key: "nvidia.com/gpu"
+gpu_taint_effect: "NoSchedule"
+gpu_machineset_prefix: "gpu-"
+
+# Operator CSV versions — update when operators change.
+gpu_csv_name: "gpu-operator-certified.v25.3.4"
+nfd_csv_prefix: "nfd\\."
+
+# Operator namespaces.
+operator_namespaces_base:
+  - openshift-nfd
+  - redhat-ods-operator
+  - openshift-operators
+
+operator_namespaces_gpu:
+  - nvidia-gpu-operator
+
+operator_namespaces: "{{ operator_namespaces_base + (operator_namespaces_gpu if (enable_gpu | bool) else []) }}"
+
+# Timeout and retry settings (seconds).
+machineset_retries: 6
+machineset_delay: 5
+installplan_retries: 30
+installplan_delay: 10
+csv_retries: 40
+csv_delay: 15
+nfd_retries: 20
+nfd_delay: 15
+dsc_retries: 40
+dsc_delay: 15
+clusterpolicy_retries: 40
+clusterpolicy_delay: 15
+gpu_node_retries: 30
+gpu_node_delay: 30
+
+# Path to manifest files.
+manifest_base_dir: "{{ playbook_dir }}/.."
+
+# ─── FBI UCR demo settings ────────────────────────────────────────────────
+# Namespaces for the demo workloads.
+predictive_namespace: "fbi-ucr"
+mcp_namespace: "fbi-mcp"
+agent_namespace: "fbi-agent"
+llm_namespace: "gpt-oss-model"
+
+# Source repos. These are pinned upstream URLs the demo pulls from. When the
+# repos move to github.com/redhat-ai-americas, update the URL here only.
+predictive_image: "quay.io/wjackson/crime-stats-api:latest"
+# Pinned to the env-driven-PREDICTION_API_URL branch until rdwj/fbi-crime-stats-mcp#1
+# merges. Switch back to "main" after merge.
+mcp_repo_url: "https://github.com/rdwj/fbi-crime-stats-mcp.git"
+mcp_repo_ref: "feat/env-driven-prediction-url"
+agent_repo_url: "https://github.com/redhat-ai-americas/fbi-crime-analyst-agent.git"
+agent_repo_ref: "main"
+
+# Local fallback: when the agent repo is not yet pushed to GitHub, point
+# this at a sibling directory and the deploy play will use it instead of cloning.
+# Override with: -e agent_local_path=/Users/you/Developer/DEMOS/fbi-crime-analyst-agent
+agent_local_path: ""
+
+# FBI Crime Data Explorer API key. Override at deploy time:
+#   -e fbi_api_key=<your-key>
+# Free key: https://api.data.gov/signup/
+fbi_api_key: ""
+
+# LLM model name as registered with vLLM (passed to the agent's litellm config).
+llm_model_id: "RedHatAI/gpt-oss-20b"
+
+# oc context name. Empty = use the active context from kubeconfig. Set to
+# "fbi-ucr" (or whatever your kubeconfig calls the target cluster) for
+# multi-session safety when concurrent Claude sessions touch other clusters.
+# Override at deploy time with: -e oc_context=fbi-ucr
+oc_context: ""

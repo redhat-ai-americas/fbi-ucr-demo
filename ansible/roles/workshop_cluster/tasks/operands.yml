@@ -1,0 +1,15 @@
+- name: Apply version-independent operand manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ item }}"
+  loop: >-
+    {{ lookup('fileglob', manifest_base_dir + '/operands/*.yaml', wantlist=true)
+       | reject('search', 'datasciencecluster')
+       | list }}
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Apply DataScienceCluster manifest (RHOAI {{ rhoai_version }})
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ manifest_base_dir }}/operands/datasciencecluster-{{ rhoai_version }}.yaml"

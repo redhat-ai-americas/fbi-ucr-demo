@@ -1,0 +1,34 @@
+- name: Wait for NFD instance to be Available
+  kubernetes.core.k8s_info:
+    api_version: nfd.openshift.io/v1
+    kind: NodeFeatureDiscovery
+    name: nfd-instance
+    namespace: openshift-nfd
+  register: nfd_instance
+  until:
+    - nfd_instance.resources | length > 0
+    - nfd_instance.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Available') | selectattr('status', 'equalto', 'True') | list | length > 0
+  retries: "{{ nfd_retries | int }}"
+  delay: "{{ nfd_delay | int }}"
+
+- name: Wait for NFD labels on nodes
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: node_labels_check
+  until:
+    - node_labels_check.resources | map(attribute='metadata.labels') | map('dict2items') | flatten | selectattr('key', 'match', '^feature\\.node\\.kubernetes\\.io') | list | length > 0
+  retries: "{{ nfd_retries | int }}"
+  delay: "{{ nfd_delay | int }}"
+
+- name: Wait for DataScienceCluster to be Ready
+  kubernetes.core.k8s_info:
+    api_version: datasciencecluster.opendatahub.io/v2
+    kind: DataScienceCluster
+    name: default-dsc
+  register: dsc_check
+  until:
+    - dsc_check.resources | length > 0
+    - dsc_check.resources[0].status.conditions | default([]) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+  retries: "{{ dsc_retries | int }}"
+  delay: "{{ dsc_delay | int }}"

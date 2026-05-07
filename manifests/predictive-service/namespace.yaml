@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fbi-ucr
+  labels:
+    app.kubernetes.io/name: fbi-ucr
+    app.kubernetes.io/part-of: fbi-ucr-demo
