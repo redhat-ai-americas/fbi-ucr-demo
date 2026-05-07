@@ -16,13 +16,21 @@ End-to-end runtime: ~30–40 minutes from logged-in cluster to working chat UI.
 ## Prerequisites
 
 - A fresh OpenShift 4 cluster (see **Cluster sizing** below)
-- Local tools: `oc`, `ansible` (with the `kubernetes.core` collection), `git`, `bash`
-- Optional: an [FBI Crime Data Explorer API key](https://api.data.gov/signup/) — only needed for the `ucr_history` tool
+- Local tools: `oc`, `ansible` (with the `kubernetes.core` collection), `helm`, `git`, `bash`
+- An [FBI Crime Data Explorer API key](https://api.data.gov/signup/) (free, ~30 sec) — required for the `ucr_history` tool. The other three tools (`ucr_forecast`, `ucr_compare`, `ucr_info`) work without it.
 
 ```bash
 pip install ansible kubernetes
 ansible-galaxy collection install kubernetes.core
 ```
+
+### Getting an FBI API key
+
+1. Visit https://api.data.gov/signup/ and submit your email.
+2. The key arrives by email immediately (one-line value, ~40 chars).
+3. Pass it to `setup.sh` (see below) — it's stored in a Kubernetes Secret in the `fbi-mcp` namespace and read by the MCP server's `ucr_history` tool.
+
+Without a key, `ucr_history` returns a clear `403 API_KEY_MISSING` error to the agent, which surfaces it to the user. Forecasts (`ucr_forecast`, `ucr_compare`, `ucr_info`) still work — they hit the in-cluster predictive service, not the public FBI API.
 
 ---
 
@@ -56,11 +64,13 @@ oc login --server=https://api.cluster-XXXXX.sandbox-ocp.opentlc.com:6443 \
          --username=kubeadmin --password=<from-order-page>
 ```
 
-Then from the repo root:
+Then from the repo root, with your FBI API key:
 
 ```bash
-./setup.sh
+./setup.sh --fbi-api-key YOUR_FBI_KEY_HERE
 ```
+
+(You can omit `--fbi-api-key` if you don't plan to use the `ucr_history` tool — see prereqs.)
 
 That's it. The script:
 
@@ -72,12 +82,26 @@ That's it. The script:
 ### Optional flags
 
 ```bash
-./setup.sh --fbi-api-key YOUR_KEY        # Enable the ucr_history tool
+./setup.sh --fbi-api-key YOUR_KEY        # Required for ucr_history; optional for the rest
 ./setup.sh --enable-htpasswd             # Workshop mode: requires you to provide your own auth/*.yaml manifests
 ./setup.sh --no-gpu                      # CPU-only (skips LLM serving)
 ./setup.sh --skip-cluster-setup          # Cluster already has RHOAI + GPU
 ./setup.sh --agent-local /path/to/agent  # Use a local agent repo (dev mode)
+./setup.sh --oc-context fbi-ucr          # Pin to a specific oc context (multi-session safety)
 ```
+
+### Adding the FBI API key after the fact
+
+If you ran `setup.sh` without `--fbi-api-key` and the user hits `403 API_KEY_MISSING` from `ucr_history`, patch the Secret and roll the pod:
+
+```bash
+oc --context=fbi-ucr -n fbi-mcp patch secret fbi-crime-stats-mcp-secrets \
+  --type=merge -p '{"stringData":{"FBI_API_KEY":"YOUR_KEY_HERE"}}'
+oc --context=fbi-ucr -n fbi-mcp rollout restart deployment/fbi-crime-stats-mcp
+oc --context=fbi-ucr -n fbi-agent rollout restart deployment/fbi-crime-analyst-agent
+```
+
+The agent restart is needed so it re-establishes its MCP session against the rebuilt server.
 
 ---
 
